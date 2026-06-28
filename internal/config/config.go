@@ -22,6 +22,7 @@ type Config struct {
 	MigrationsDir     string
 	AuthRatePerMin    int    // per-IP /auth/token requests per minute; 0 disables
 	AdminToken        string // gates the /admin dashboard; empty disables it
+	PprofAddr         string // if set, serves net/http/pprof on this addr
 }
 
 // Load reads configuration from the environment, applying defaults for
@@ -38,6 +39,7 @@ func Load() (*Config, error) {
 		MigrationsDir:     getenv("MIGRATIONS_DIR", "migrations"),
 		AuthRatePerMin:    60,
 		AdminToken:        os.Getenv("ADMIN_TOKEN"),
+		PprofAddr:         os.Getenv("PPROF_ADDR"),
 	}
 
 	if c.DatabaseURL == "" {

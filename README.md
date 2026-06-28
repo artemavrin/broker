@@ -81,6 +81,7 @@ go run ./cmd/broker
 | `MIGRATIONS_DIR` | `migrations` | каталог с `*.sql` |
 | `AUTH_RATE_PER_MIN` | `60` | лимит `/auth/token` на IP в минуту (`0` — выкл.) |
 | `ADMIN_TOKEN` | — | включает админ-дашборд `/admin/` (пусто — выключен) |
+| `PPROF_ADDR` | — | адрес приватного pprof-эндпоинта (пусто — выключен) |
 
 ## REST API
 
@@ -236,6 +237,26 @@ go run ./cmd/loadtest -base http://127.0.0.1:8080 -secret <initiator-secret> \
 HTTP-polling (нет poll-gap). Забор/ack батчевый и дёшев. Тюнинг-рычаги:
 `synchronous_commit`/`commit_delay` (группировка коммитов), `pool_max_conns` в
 `DATABASE_URL`, горизонтальное масштабирование инстансов.
+
+### Профилирование (pprof)
+
+Задайте `PPROF_ADDR` (например `127.0.0.1:6060`) — поднимется приватный
+`net/http/pprof` на отдельном listener'е (и включится mutex/block-профиль).
+Снимать под нагрузкой:
+
+```bash
+go tool pprof -top  http://127.0.0.1:6060/debug/pprof/profile?seconds=15  # CPU
+go tool pprof -top  http://127.0.0.1:6060/debug/pprof/mutex               # контеншн
+go tool pprof -top  http://127.0.0.1:6060/debug/pprof/block               # блокировки
+```
+
+Что показал профиль под нагрузкой: брокер **I/O-bound, а не CPU-bound** (~41%
+утилизации CPU, в топе self-time — сетевые `syscall`, не прикладной код).
+Прикладного хотспота нет: ни JSON, ни base64, ни crypto не доминируют. Контеншн
+на mutex'ах ничтожный — глобальный мьютекс `wshub` на этих нагрузках не узкое
+место. Время уходит на ожидание Postgres (commit). Вывод совпадает с
+нагрузочным: ускорять надо Postgres (батчинг коммитов / масштабирование), а не
+Go-код — горячий путь брокера и так тонкий.
 
 ## Безопасность (несущие правила)
 

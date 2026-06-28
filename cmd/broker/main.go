@@ -8,8 +8,10 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -81,6 +83,27 @@ func runServer(log *slog.Logger) error {
 		root.Handle("/", api.Routes())
 		handler = root
 		log.Info("admin dashboard enabled", "path", "/admin/")
+	}
+
+	// Optional pprof endpoint on a separate, private listener. Enabling it also
+	// turns on mutex/block profiling so contention shows up in the profiles.
+	if cfg.PprofAddr != "" {
+		runtime.SetMutexProfileFraction(5)
+		runtime.SetBlockProfileRate(1_000_000) // sample blocking events ~every 1ms
+		pmux := http.NewServeMux()
+		pmux.HandleFunc("/debug/pprof/", pprof.Index)
+		pmux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		pmux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		pmux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		pmux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		psrv := &http.Server{Addr: cfg.PprofAddr, Handler: pmux}
+		go func() {
+			log.Info("pprof listening", "addr", cfg.PprofAddr)
+			if err := psrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Warn("pprof server stopped", "err", err)
+			}
+		}()
+		defer psrv.Close()
 	}
 
 	// Dedicated listener connection (never from the pool) drives the doorbell.
