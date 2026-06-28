@@ -12,6 +12,7 @@ import (
 
 	"github.com/artemavrin/broker/internal/wshub"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // payload is the JSON body the sender attaches to pg_notify.
@@ -70,7 +71,15 @@ func (l *Listener) Run(ctx context.Context) {
 // listen establishes one connection, issues LISTEN, and pumps notifications
 // until the context is cancelled or the connection errors.
 func (l *Listener) listen(ctx context.Context) error {
-	conn, err := pgx.Connect(ctx, l.url)
+	// Parse with pgxpool's parser so pool-only DSN parameters (pool_max_conns,
+	// pool_min_conns, …) are stripped: a single pgx.Connect would otherwise
+	// forward them to the server as runtime parameters and fail with
+	// "unrecognized configuration parameter", silently killing the doorbell.
+	cfg, err := pgxpool.ParseConfig(l.url)
+	if err != nil {
+		return err
+	}
+	conn, err := pgx.ConnectConfig(ctx, cfg.ConnConfig)
 	if err != nil {
 		return err
 	}

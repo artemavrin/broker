@@ -29,6 +29,9 @@ test-unit: ## Run only the no-DB unit tests
 bench: ## Run the queue throughput benchmarks
 	go test -run xxx -bench . -benchmem ./internal/integration/
 
+loadtest: ## Drive end-to-end load (set SECRET=<initiator-secret>)
+	go run ./cmd/loadtest -secret "$(SECRET)" -senders 16 -receivers 4 -duration 15s -consumer ws
+
 lint: fmt vet ## Check formatting and run go vet
 
 fmt: ## Report any unformatted files

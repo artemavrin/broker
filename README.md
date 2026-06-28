@@ -208,6 +208,35 @@ go test -race ./...
 `revoke` блокирует повторную авторизацию, WS-звонок, мультисессия, отправка по
 WS.
 
+## Нагрузочное тестирование
+
+`cmd/loadtest` — генератор, который ходит через реальный API: аутентификация,
+создание N приёмников, G параллельных отправителей (инициатор → приёмники по
+кругу) и по одному потребителю на приёмник. В payload зашит таймстамп, поэтому
+меряется и сквозная (e2e) латентность. Потребитель — HTTP-polling или
+WS-doorbell.
+
+```bash
+# нужен секрет инициатора (из дашборда или create-initiator)
+go run ./cmd/loadtest -base http://127.0.0.1:8080 -secret <initiator-secret> \
+  -senders 16 -receivers 4 -payload 256 -duration 15s -consumer ws
+# либо: make loadtest SECRET=<initiator-secret>
+```
+
+Флаги: `-senders`, `-receivers`, `-payload`, `-batch`, `-duration`,
+`-consumer http|ws`, `-rate` (лимит sends/s, 0 — без лимита). Отчёт: throughput
+(sent/delivered/acked в сек), latency p50/p95/p99 для send и e2e, ошибки и
+остаточный backlog (рост = backpressure).
+
+Что показывают замеры (одна локальная PG, durable-коммит): запись —
+**commit-bound**, потолок ~650–820 msg/s, и он упирается в **fsync WAL на
+каждый коммит**, а не в число соединений (пул больше ~8 только вредит).
+`synchronous_commit=off` поднимает запись в ~10–13× (ценой durability
+последних сотен мс при краше). WS-doorbell даёт меньшую e2e-латентность, чем
+HTTP-polling (нет poll-gap). Забор/ack батчевый и дёшев. Тюнинг-рычаги:
+`synchronous_commit`/`commit_delay` (группировка коммитов), `pool_max_conns` в
+`DATABASE_URL`, горизонтальное масштабирование инстансов.
+
 ## Безопасность (несущие правила)
 
 - Секреты — `crypto/rand`, 32 байта, `base64.RawURLEncoding`.
