@@ -1,0 +1,27 @@
+{{define "login"}}<!doctype html>
+<html lang="en">
+<head>{{template "head" .}}</head>
+<body>
+<div class="login-wrap">
+  <div class="card login-card">
+    <div class="brand">
+      <div class="mark"></div>
+      <div>
+        <div class="name">Broker</div>
+        <div class="sub">admin console</div>
+      </div>
+    </div>
+    <h1>Sign in</h1>
+    <p class="sub">Enter the admin token to manage initiators and view analytics.</p>
+    {{if .Error}}<div class="err">{{.Error}}</div>{{end}}
+    <form method="post" action="/admin/login">
+      <label class="field">
+        <span class="l">Admin token</span>
+        <input type="password" name="token" autofocus autocomplete="current-password" placeholder="••••••••••••••••">
+      </label>
+      <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+    </form>
+  </div>
+</div>
+</body>
+</html>{{end}}

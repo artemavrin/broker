@@ -20,7 +20,8 @@ type Config struct {
 	MaxPayloadBytes   int
 	ListenChannel     string
 	MigrationsDir     string
-	AuthRatePerMin    int // per-IP /auth/token requests per minute; 0 disables
+	AuthRatePerMin    int    // per-IP /auth/token requests per minute; 0 disables
+	AdminToken        string // gates the /admin dashboard; empty disables it
 }
 
 // Load reads configuration from the environment, applying defaults for
@@ -36,6 +37,7 @@ func Load() (*Config, error) {
 		ListenChannel:     getenv("LISTEN_CHANNEL", "new_message"),
 		MigrationsDir:     getenv("MIGRATIONS_DIR", "migrations"),
 		AuthRatePerMin:    60,
+		AdminToken:        os.Getenv("ADMIN_TOKEN"),
 	}
 
 	if c.DatabaseURL == "" {

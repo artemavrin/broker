@@ -16,11 +16,15 @@ type Role string
 const (
 	RoleInitiator Role = "initiator"
 	RoleReceiver  Role = "receiver"
+	// RoleAdmin is used only for dashboard session tokens, never for
+	// participants. The participant endpoints reject it (it owns no receivers
+	// and fails every addressing-policy branch), so it cannot send or fetch.
+	RoleAdmin Role = "admin"
 )
 
 // Valid reports whether r is a recognised role.
 func (r Role) Valid() bool {
-	return r == RoleInitiator || r == RoleReceiver
+	return r == RoleInitiator || r == RoleReceiver || r == RoleAdmin
 }
 
 // Identity is the authenticated subject extracted from a verified token.
@@ -51,13 +55,19 @@ func NewSigner(key []byte, ttl time.Duration) *Signer {
 // now + ttl. Revocation is intentionally not encoded: it is checked only at
 // issue time, so the TTL must be kept short.
 func (s *Signer) Issue(subject string, role Role) (token string, expiresIn time.Duration, err error) {
+	return s.IssueWithTTL(subject, role, s.ttl)
+}
+
+// IssueWithTTL is like Issue but with an explicit lifetime, used for admin
+// dashboard sessions which want a longer window than the participant TTL.
+func (s *Signer) IssueWithTTL(subject string, role Role, ttl time.Duration) (token string, expiresIn time.Duration, err error) {
 	now := time.Now()
 	c := claims{
 		Role: role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   subject,
 			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(s.ttl)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 		},
 	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
@@ -65,7 +75,7 @@ func (s *Signer) Issue(subject string, role Role) (token string, expiresIn time.
 	if err != nil {
 		return "", 0, err
 	}
-	return signed, s.ttl, nil
+	return signed, ttl, nil
 }
 
 // Verify checks the token's signature and expiry (stateless: no DB lookup)

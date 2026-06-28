@@ -1,0 +1,82 @@
+{{define "overview"}}<!doctype html>
+<html lang="en">
+<head>{{template "head" .}}</head>
+<body>
+<div class="app">
+  {{template "sidebar" .}}
+  <div class="main">
+    {{template "topbar" .}}
+    <div class="content">
+
+      <div class="kpis">
+        <div class="kpi">
+          <div class="k-label">Queue depth</div>
+          <div class="k-value">{{.Stats.QueueDepth}}</div>
+          <div class="k-foot"><span class="k-accent">{{.Stats.Recipients}}</span> inbox{{if ne .Stats.Recipients 1}}es{{end}} with backlog</div>
+        </div>
+        <div class="kpi">
+          <div class="k-label">In flight</div>
+          <div class="k-value">{{.Stats.InFlight}}</div>
+          <div class="k-foot">locked, awaiting ack</div>
+        </div>
+        <div class="kpi">
+          <div class="k-label">Initiators</div>
+          <div class="k-value">{{sub .Stats.Initiators .Stats.InitiatorsRevoked}}</div>
+          <div class="k-foot">{{.Stats.Initiators}} total · {{.Stats.InitiatorsRevoked}} revoked</div>
+        </div>
+        <div class="kpi">
+          <div class="k-label">Receivers</div>
+          <div class="k-value">{{sub .Stats.Receivers .Stats.ReceiversRevoked}}</div>
+          <div class="k-foot">{{.Stats.Receivers}} total · {{.Stats.ReceiversRevoked}} revoked</div>
+        </div>
+      </div>
+
+      <div class="cols">
+        <div class="card">
+          <div class="card-head">
+            <h2>Backlog by recipient</h2>
+            <span class="hint">top {{len .Backlogs}}</span>
+          </div>
+          {{if .Backlogs}}
+          <div class="bars">
+            {{range .Backlogs}}
+            <div class="bar-row">
+              <span class="who">{{shortID .ToAddr}}</span>
+              <span class="bar-track"><span class="bar-fill" style="width:{{pct .Count $.MaxBacklog}}%"></span></span>
+              <span class="n">{{.Count}}</span>
+            </div>
+            {{end}}
+          </div>
+          {{else}}
+          <div class="empty">Queue is empty — every message has been delivered and acked.</div>
+          {{end}}
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Throughput</h2><span class="hint">since start</span></div>
+          <div class="bars" style="gap:18px">
+            <div>
+              <div class="k-label">Messages sent</div>
+              <div class="k-value" style="font-size:24px">{{.Tput.Sent}}</div>
+            </div>
+            <div>
+              <div class="k-label">Messages acked</div>
+              <div class="k-value" style="font-size:24px">{{.Tput.Acked}}</div>
+            </div>
+            <div>
+              <div class="k-label">Live WS sessions</div>
+              <div class="k-value" style="font-size:24px">{{.Sessions}}</div>
+            </div>
+            <div>
+              <div class="k-label">Oldest queued</div>
+              <div class="k-value" style="font-size:24px">{{humanAge .Stats.OldestSeconds}}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</body>
+</html>{{end}}

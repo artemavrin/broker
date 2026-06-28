@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/artemavrin/broker/internal/admin"
 	"github.com/artemavrin/broker/internal/auth"
 	"github.com/artemavrin/broker/internal/config"
 	"github.com/artemavrin/broker/internal/core"
@@ -70,6 +71,18 @@ func runServer(log *slog.Logger) error {
 	ws := wsapi.New(svc, signer, hub, log)
 	api := httpapi.New(svc, signer, ws, cfg.AuthRatePerMin, log)
 
+	// The admin dashboard is mounted only when an ADMIN_TOKEN is configured.
+	handler := http.Handler(api.Routes())
+	if cfg.AdminToken != "" {
+		const adminSessionTTL = 12 * time.Hour
+		dash := admin.New(svc, signer, hub, cfg.AdminToken, adminSessionTTL, log)
+		root := http.NewServeMux()
+		root.Handle("/admin/", dash.Routes())
+		root.Handle("/", api.Routes())
+		handler = root
+		log.Info("admin dashboard enabled", "path", "/admin/")
+	}
+
 	// Dedicated listener connection (never from the pool) drives the doorbell.
 	listener := notify.New(database.URL(), cfg.ListenChannel, hub, log)
 	listenerCtx, listenerCancel := context.WithCancel(context.Background())
@@ -83,7 +96,7 @@ func runServer(log *slog.Logger) error {
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           api.Routes(),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		BaseContext:       func(net.Listener) context.Context { return requestCtx },
 	}

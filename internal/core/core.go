@@ -6,6 +6,7 @@ package core
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"time"
 
 	"github.com/artemavrin/broker/internal/auth"
@@ -33,6 +34,22 @@ type Service struct {
 	maxPayload    int
 	visibility    time.Duration
 	listenChannel string
+
+	// Live throughput counters since process start. Acked messages are deleted
+	// from the queue, so these are the only source of historical throughput.
+	sentTotal  atomic.Int64
+	ackedTotal atomic.Int64
+}
+
+// Throughput is a snapshot of the live counters since process start.
+type Throughput struct {
+	Sent  int64
+	Acked int64
+}
+
+// Throughput returns the cumulative sent/acked counts since start.
+func (s *Service) Throughput() Throughput {
+	return Throughput{Sent: s.sentTotal.Load(), Acked: s.ackedTotal.Load()}
 }
 
 // New builds a Service.
@@ -120,6 +137,9 @@ func (s *Service) Send(ctx context.Context, id auth.Identity, to string, payload
 	if !policyOK {
 		return 0, false, ErrPolicy
 	}
+	if inserted {
+		s.sentTotal.Add(1)
+	}
 	return msgID, inserted, nil
 }
 
@@ -135,5 +155,24 @@ func (s *Service) Fetch(ctx context.Context, id auth.Identity, max int) ([]db.Me
 // Ack deletes the given message ids from the identity's own inbox and returns
 // the number removed.
 func (s *Service) Ack(ctx context.Context, id auth.Identity, ids []int64) (int64, error) {
-	return s.db.Ack(ctx, id.Subject, ids)
+	n, err := s.db.Ack(ctx, id.Subject, ids)
+	if err == nil && n > 0 {
+		s.ackedTotal.Add(n)
+	}
+	return n, err
+}
+
+// NewInitiator provisions a new initiator and returns its id plus a freshly
+// generated secret, returned exactly once (only its hash is stored). Used by
+// the admin dashboard to onboard initiators without the CLI.
+func (s *Service) NewInitiator(ctx context.Context) (id, rawSecret string, err error) {
+	rawSecret, err = secret.Generate()
+	if err != nil {
+		return "", "", err
+	}
+	id, err = s.db.CreateInitiator(ctx, secret.Hash(rawSecret))
+	if err != nil {
+		return "", "", err
+	}
+	return id, rawSecret, nil
 }

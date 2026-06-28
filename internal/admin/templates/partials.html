@@ -1,0 +1,44 @@
+{{define "head"}}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{{if .AutoRefresh}}<meta http-equiv="refresh" content="5">{{end}}
+<title>{{.Title}} · Broker admin</title>
+<link rel="stylesheet" href="/admin/static/style.css">
+{{end}}
+
+{{define "sidebar"}}
+<aside class="sidebar">
+  <div class="brand">
+    <div class="mark"></div>
+    <div>
+      <div class="name">Broker</div>
+      <div class="sub">admin console</div>
+    </div>
+  </div>
+  <nav class="nav">
+    <a href="/admin/" class="{{if eq .Active "overview"}}active{{end}}"><span class="ic"></span> Overview</a>
+    <a href="/admin/initiators" class="{{if eq .Active "initiators"}}active{{end}}"><span class="ic"></span> Initiators</a>
+    <a href="/admin/receivers" class="{{if eq .Active "receivers"}}active{{end}}"><span class="ic"></span> Receivers</a>
+  </nav>
+  <div class="side-foot">
+    <div class="statuscard">
+      <div class="row"><span class="dot ok"></span><span class="label">Broker online</span></div>
+      <div class="meta">{{.Sessions}} live WS session{{if ne .Sessions 1}}s{{end}}</div>
+    </div>
+    <form class="inline" method="post" action="/admin/logout" style="margin-top:10px;display:block">
+      <button class="btn btn-ghost btn-block" type="submit">Sign out</button>
+    </form>
+  </div>
+</aside>
+{{end}}
+
+{{define "topbar"}}
+<div class="topbar">
+  <div class="titles">
+    <h1>{{.H1}}</h1>
+    <div class="subtitle">{{.Sub}}</div>
+  </div>
+  {{if .AutoRefresh}}<div class="pill"><span class="dot ok"></span> Auto-refresh 5s</div>{{end}}
+  <div class="avatar">AD</div>
+</div>
+{{end}}

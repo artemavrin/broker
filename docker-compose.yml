@@ -31,6 +31,8 @@ services:
       MAX_PAYLOAD_BYTES: "262144"
       LISTEN_CHANNEL: "new_message"
       MIGRATIONS_DIR: "/app/migrations"
+      # Set to enable the admin dashboard at /admin/ (omit to disable).
+      ADMIN_TOKEN: "change-me-admin-token"
     ports:
       - "8080:8080"
 

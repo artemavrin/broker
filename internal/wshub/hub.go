@@ -63,6 +63,18 @@ func (h *Hub) Remove(s *Session) {
 	}
 }
 
+// Count returns the number of live sessions across all participants. Used by
+// the admin dashboard.
+func (h *Hub) Count() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for _, m := range h.sessions {
+		n += len(m)
+	}
+	return n
+}
+
 // Notify rings the doorbell for every session belonging to participant. The
 // send is non-blocking: if a session already has a pending signal it is left
 // as is (coalesced), since one fetch drains all available work.

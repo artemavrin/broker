@@ -1,0 +1,49 @@
+{{define "receivers"}}<!doctype html>
+<html lang="en">
+<head>{{template "head" .}}</head>
+<body>
+<div class="app">
+  {{template "sidebar" .}}
+  <div class="main">
+    <div class="topbar">
+      <div class="titles">
+        <h1>Receivers</h1>
+        <div class="subtitle">Endpoints provisioned by initiators across the star topology</div>
+      </div>
+    </div>
+    <div class="content">
+      <div class="card">
+        <div class="card-head">
+          <h2>All receivers</h2>
+          <span class="hint">showing {{len .Receivers}}</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Receiver ID</th><th>Owner initiator</th><th>Status</th><th>Created</th><th></th></tr></thead>
+            <tbody>
+              {{range .Receivers}}
+              <tr>
+                <td><span class="mono">{{shortID .ID}}</span></td>
+                <td><span class="mono">{{shortID .InitiatorID}}</span></td>
+                <td>{{if .Revoked}}<span class="badge revoked"><span class="d"></span>Revoked</span>{{else}}<span class="badge active"><span class="d"></span>Active</span>{{end}}</td>
+                <td class="muted">{{datetime .CreatedAt}}</td>
+                <td style="text-align:right">
+                  {{if not .Revoked}}
+                  <form class="inline" method="post" action="/admin/receivers/{{.ID}}/revoke" onsubmit="return confirm('Revoke this receiver?')">
+                    <button class="btn btn-danger" type="submit">Revoke</button>
+                  </form>
+                  {{end}}
+                </td>
+              </tr>
+              {{else}}
+              <tr><td colspan="5"><div class="empty">No receivers yet. Initiators create receivers via the API.</div></td></tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>{{end}}

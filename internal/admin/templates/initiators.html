@@ -1,0 +1,82 @@
+{{define "initiators"}}<!doctype html>
+<html lang="en">
+<head>{{template "head" .}}</head>
+<body>
+<div class="app">
+  {{template "sidebar" .}}
+  <div class="main">
+    <div class="topbar">
+      <div class="titles">
+        <h1>Initiators</h1>
+        <div class="subtitle">Provision and manage the closed-network senders</div>
+      </div>
+      <form class="inline flush-right" method="post" action="/admin/initiators">
+        <button class="btn btn-primary" type="submit">+ New initiator</button>
+      </form>
+    </div>
+    <div class="content">
+
+      {{if .Reveal}}
+      <div class="card reveal">
+        <div class="warn">
+          <span>⚠</span>
+          <div>This secret is shown <strong>once</strong>. Store it now — it is never recoverable. Give it to the initiator to authenticate at <code>POST /v1/auth/token</code>.</div>
+        </div>
+        <div class="secret-field">
+          <div class="lab">Initiator ID</div>
+          <div class="secret-box"><code id="rid">{{.Reveal.ID}}</code>
+            <button class="btn btn-ghost" type="button" onclick="copyText('rid', this)">Copy</button></div>
+        </div>
+        <div class="secret-field">
+          <div class="lab">Initiator secret</div>
+          <div class="secret-box"><code id="rsec">{{.Reveal.Secret}}</code>
+            <button class="btn btn-ghost" type="button" onclick="copyText('rsec', this)">Copy</button></div>
+        </div>
+        <a class="btn btn-block" href="/admin/initiators">Done</a>
+      </div>
+      {{end}}
+
+      <div class="card">
+        <div class="card-head">
+          <h2>All initiators</h2>
+          <span class="hint">{{len .Initiators}} total</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Receivers</th><th>Status</th><th>Created</th><th></th></tr></thead>
+            <tbody>
+              {{range .Initiators}}
+              <tr>
+                <td><div class="id-cell"><span class="mono">{{shortID .ID}}</span></div></td>
+                <td><span class="count-chip">{{.ActiveReceiver}}/{{.ReceiverCount}}</span></td>
+                <td>{{if .Revoked}}<span class="badge revoked"><span class="d"></span>Revoked</span>{{else}}<span class="badge active"><span class="d"></span>Active</span>{{end}}</td>
+                <td class="muted">{{datetime .CreatedAt}}</td>
+                <td style="text-align:right">
+                  {{if not .Revoked}}
+                  <form class="inline" method="post" action="/admin/initiators/{{.ID}}/revoke" onsubmit="return confirm('Revoke this initiator? It will no longer be able to obtain tokens.')">
+                    <button class="btn btn-danger" type="submit">Revoke</button>
+                  </form>
+                  {{end}}
+                </td>
+              </tr>
+              {{else}}
+              <tr><td colspan="5"><div class="empty">No initiators yet. Create the first one to get started.</div></td></tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+<script>
+function copyText(id, btn) {
+  const t = document.getElementById(id).innerText;
+  navigator.clipboard.writeText(t).then(() => {
+    const old = btn.innerText; btn.innerText = 'Copied'; setTimeout(() => btn.innerText = old, 1200);
+  });
+}
+</script>
+</body>
+</html>{{end}}
