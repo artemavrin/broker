@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: broker
+      POSTGRES_PASSWORD: broker
+      POSTGRES_DB: broker
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U broker -d broker"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  broker:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HTTP_ADDR: ":8080"
+      DATABASE_URL: "postgres://broker:broker@postgres:5432/broker?sslmode=disable"
+      # Override with your own random key (>= 32 bytes) in any real deployment.
+      JWT_SIGNING_KEY: "change-me-please-change-me-please-32+"
+      ACCESS_TTL: "30m"
+      VISIBILITY_TIMEOUT: "30s"
+      MAX_FETCH: "100"
+      MAX_PAYLOAD_BYTES: "262144"
+      LISTEN_CHANNEL: "new_message"
+      MIGRATIONS_DIR: "/app/migrations"
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:

@@ -1,0 +1,17 @@
+# Compiled binaries
+/broker
+/cmd/broker/broker
+*.exe
+
+# Test / coverage artifacts
+*.out
+coverage.*
+
+# Local env
+.env
+.env.local
+
+# Editor/OS noise
+.DS_Store
+.idea/
+.vscode/
