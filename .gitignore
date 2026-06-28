@@ -1,6 +1,7 @@
 # Compiled binaries
 /broker
 /cmd/broker/broker
+/bin/
 *.exe
 
 # Test / coverage artifacts
