@@ -31,7 +31,7 @@ type testEnv struct {
 }
 
 // dbURL returns the test database URL or skips the test if none is configured.
-func dbURL(t *testing.T) string {
+func dbURL(t testing.TB) string {
 	t.Helper()
 	for _, k := range []string{"BROKER_TEST_DATABASE_URL", "DATABASE_URL"} {
 		if v := os.Getenv(k); v != "" {
@@ -45,7 +45,7 @@ func dbURL(t *testing.T) string {
 // newEnv connects to the database, applies migrations, truncates state, and
 // wires the full stack (core service, HTTP API, WS handler and a live LISTEN
 // listener) behind an httptest server.
-func newEnv(t *testing.T) *testEnv {
+func newEnv(t testing.TB) *testEnv {
 	t.Helper()
 	url := dbURL(t)
 	ctx := context.Background()
@@ -95,7 +95,7 @@ func newEnv(t *testing.T) *testEnv {
 }
 
 // newInitiator creates an initiator and returns its id plus an issued token.
-func (e *testEnv) newInitiator(t *testing.T) (id, token string) {
+func (e *testEnv) newInitiator(t testing.TB) (id, token string) {
 	t.Helper()
 	raw, err := secret.Generate()
 	if err != nil {
@@ -113,7 +113,7 @@ func (e *testEnv) newInitiator(t *testing.T) (id, token string) {
 }
 
 // newReceiver creates a receiver under initiatorID and returns its id and token.
-func (e *testEnv) newReceiver(t *testing.T, initiatorID string) (id, token string) {
+func (e *testEnv) newReceiver(t testing.TB, initiatorID string) (id, token string) {
 	t.Helper()
 	raw, err := secret.Generate()
 	if err != nil {
