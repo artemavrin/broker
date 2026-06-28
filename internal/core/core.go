@@ -90,46 +90,37 @@ func (s *Service) RevokeReceiver(ctx context.Context, initiatorID, receiverID st
 // message. from is always taken from the authenticated identity, never from
 // the request body. It returns the new id and whether a row was actually
 // inserted (false on an idempotent duplicate).
+//
+// Policy is enforced inside the insert (see db.Send): we identify the receiver
+// row whose existence authorises this send and let the database gate on it in
+// the same statement, avoiding a separate query and a check-then-insert race.
+//   - initiator → its own receiver: the row is (id=to, initiator_id=sender).
+//   - receiver  → its own initiator: the row is (id=sender, initiator_id=to).
 func (s *Service) Send(ctx context.Context, id auth.Identity, to string, payload []byte, clientMsgID string) (msgID int64, inserted bool, err error) {
 	if len(payload) > s.maxPayload {
 		return 0, false, ErrPayloadTooLarge
 	}
-	if err := s.checkPolicy(ctx, id, to); err != nil {
-		return 0, false, err
-	}
-	return s.db.Send(ctx, id.Subject, to, payload, clientMsgID, s.listenChannel)
-}
 
-// checkPolicy enforces the star topology:
-//   - an initiator may only address its own non-revoked receivers;
-//   - a receiver may only address its own initiator.
-func (s *Service) checkPolicy(ctx context.Context, id auth.Identity, to string) error {
+	var probeReceiver, probeInitiator string
 	switch id.Role {
 	case auth.RoleInitiator:
-		ok, err := s.db.OwnsLiveReceiver(ctx, id.Subject, to)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return ErrPolicy
-		}
-		return nil
+		probeReceiver, probeInitiator = to, id.Subject
 	case auth.RoleReceiver:
-		initiatorID, err := s.db.ReceiverInitiator(ctx, id.Subject)
-		if errors.Is(err, db.ErrNotFound) {
-			// The receiver was revoked after its token was issued.
-			return ErrPolicy
-		}
-		if err != nil {
-			return err
-		}
-		if initiatorID != to {
-			return ErrPolicy
-		}
-		return nil
+		probeReceiver, probeInitiator = id.Subject, to
 	default:
-		return ErrPolicy
+		return 0, false, ErrPolicy
 	}
+
+	msgID, inserted, policyOK, err := s.db.Send(
+		ctx, id.Subject, to, payload, clientMsgID, probeReceiver, probeInitiator, s.listenChannel,
+	)
+	if err != nil {
+		return 0, false, err
+	}
+	if !policyOK {
+		return 0, false, ErrPolicy
+	}
+	return msgID, inserted, nil
 }
 
 // Fetch claims and returns up to max messages for the identity's inbox,

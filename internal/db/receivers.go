@@ -3,8 +3,6 @@ package db
 import (
 	"context"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 )
 
 // Receiver is a row from the receivers table, minus its secret hash.
@@ -62,35 +60,4 @@ func (db *DB) RevokeReceiver(ctx context.Context, receiverID, initiatorID string
 		return ErrNotFound
 	}
 	return nil
-}
-
-// OwnsLiveReceiver reports whether receiverID is a non-revoked receiver owned
-// by initiatorID. Used to validate an initiator's "to" target before sending.
-func (db *DB) OwnsLiveReceiver(ctx context.Context, initiatorID, receiverID string) (bool, error) {
-	var one int
-	err := db.pool.QueryRow(ctx,
-		`SELECT 1 FROM receivers WHERE id = $1 AND initiator_id = $2 AND NOT revoked`,
-		receiverID, initiatorID,
-	).Scan(&one)
-	if err == pgx.ErrNoRows {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-// ReceiverInitiator returns the initiator_id of a non-revoked receiver. Used
-// to validate a receiver's "to" target (which must equal its own initiator).
-func (db *DB) ReceiverInitiator(ctx context.Context, receiverID string) (string, error) {
-	var initiatorID string
-	err := db.pool.QueryRow(ctx,
-		`SELECT initiator_id::text FROM receivers WHERE id = $1 AND NOT revoked`,
-		receiverID,
-	).Scan(&initiatorID)
-	if err == pgx.ErrNoRows {
-		return "", ErrNotFound
-	}
-	return initiatorID, err
 }

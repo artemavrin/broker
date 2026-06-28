@@ -92,7 +92,8 @@ func TestVisibilityReclaim(t *testing.T) {
 
 	// Enqueue one message, then fetch with a short visibility window directly
 	// against the db so we can observe reclaim without waiting 30s.
-	if _, _, err := e.db.Send(ctx, iid, rid, []byte("reclaim"), "", "new_message"); err != nil {
+	// initiator iid → receiver rid: the authorising row is (id=rid, initiator_id=iid).
+	if _, _, _, err := e.db.Send(ctx, iid, rid, []byte("reclaim"), "", rid, iid, "new_message"); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 	first, err := e.db.Fetch(ctx, rid, 10, 500*time.Millisecond)

@@ -2,10 +2,7 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 )
 
 // Message is a queue row as returned to its recipient. payload is raw bytes;
@@ -17,54 +14,74 @@ type Message struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Send inserts a message and, when it is genuinely new, fires a
-// pg_notify("<channel>", {"to":...}) in the same transaction so that a live
-// recipient session gets a doorbell. Idempotency is enforced by the partial
-// unique index on (from_addr, client_msg_id): a duplicate send returns
-// inserted=false with no notification.
+// sendQuery is a single statement (implicitly one transaction) that does the
+// whole send: it validates addressing policy, conditionally inserts the
+// message, and fires the doorbell — in one round-trip.
 //
-// clientMsgID may be empty, in which case no idempotency key applies.
-func (db *DB) Send(ctx context.Context, from, to string, payload []byte, clientMsgID string, channel string) (id int64, inserted bool, err error) {
-	tx, err := db.pool.Begin(ctx)
-	if err != nil {
-		return 0, false, err
-	}
-	defer tx.Rollback(ctx)
+//   - The policy is "there exists a live receiver row (probeReceiver,
+//     probeInitiator)". For an initiator that is its own target receiver; for a
+//     receiver that is itself paired with the target initiator. The same EXISTS
+//     gates the INSERT and is reported back, so a caller can tell a policy
+//     failure (insert skipped, exists=false) apart from an idempotent duplicate
+//     (insert skipped by ON CONFLICT, exists=true). Both yield zero inserted
+//     rows, which is why the flag is needed.
+//   - Evaluating the policy inside the INSERT removes the check-then-insert
+//     race the previous two-query version had: both reads share one snapshot.
+//   - The `notified` CTE references `ins` and is itself referenced by the final
+//     SELECT, so pg_notify runs exactly once per inserted row and never on a
+//     duplicate or a rejected send.
+const sendQuery = `
+WITH ins AS (
+    INSERT INTO messages (from_addr, to_addr, payload, client_msg_id)
+    SELECT $1::uuid, $2::uuid, $3::bytea, $4::text
+    WHERE EXISTS (
+        SELECT 1 FROM receivers
+        WHERE id = $5::uuid AND initiator_id = $6::uuid AND NOT revoked
+    )
+    ON CONFLICT (from_addr, client_msg_id) WHERE client_msg_id IS NOT NULL DO NOTHING
+    RETURNING id, to_addr
+),
+notified AS (
+    SELECT pg_notify($7::text, json_build_object('to', to_addr)::text) FROM ins
+)
+SELECT
+    EXISTS (
+        SELECT 1 FROM receivers
+        WHERE id = $5::uuid AND initiator_id = $6::uuid AND NOT revoked
+    )                          AS policy_ok,
+    (SELECT id FROM ins)       AS id,
+    (SELECT count(*) FROM notified) AS notified`
 
+// Send validates policy, inserts the message and rings the doorbell in a single
+// round-trip. probeReceiver/probeInitiator identify the receiver row whose
+// existence authorises the send (computed by the caller from the sender role).
+//
+// It returns policyOK=false when the addressing is not permitted (caller maps
+// to 403), inserted=false with policyOK=true on an idempotent duplicate, and
+// the new id otherwise. clientMsgID may be empty (no idempotency key).
+func (db *DB) Send(ctx context.Context, from, to string, payload []byte, clientMsgID, probeReceiver, probeInitiator, channel string) (id int64, inserted, policyOK bool, err error) {
 	var cmid *string
 	if clientMsgID != "" {
 		cmid = &clientMsgID
 	}
 
-	row := tx.QueryRow(ctx, `
-		INSERT INTO messages (from_addr, to_addr, payload, client_msg_id)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (from_addr, client_msg_id) WHERE client_msg_id IS NOT NULL DO NOTHING
-		RETURNING id`,
-		from, to, payload, cmid,
+	var (
+		gotID    *int64
+		notified int64
 	)
-	if err := row.Scan(&id); err != nil {
-		if err == pgx.ErrNoRows {
-			// Conflict: a duplicate. No row inserted, no doorbell.
-			if cerr := tx.Commit(ctx); cerr != nil {
-				return 0, false, cerr
-			}
-			return 0, false, nil
-		}
-		return 0, false, err
+	err = db.pool.QueryRow(ctx, sendQuery,
+		from, to, payload, cmid, probeReceiver, probeInitiator, channel,
+	).Scan(&policyOK, &gotID, &notified)
+	if err != nil {
+		return 0, false, false, err
 	}
-
-	notice, _ := json.Marshal(struct {
-		To string `json:"to"`
-	}{To: to})
-	if _, err := tx.Exec(ctx, `SELECT pg_notify($1, $2)`, channel, string(notice)); err != nil {
-		return 0, false, err
+	if !policyOK {
+		return 0, false, false, nil
 	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return 0, false, err
+	if gotID == nil {
+		return 0, false, true, nil // duplicate
 	}
-	return id, true, nil
+	return *gotID, true, true, nil
 }
 
 // Fetch atomically claims up to max messages addressed to "to" whose lock has
