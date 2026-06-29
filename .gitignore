@@ -1,5 +1,7 @@
 # Compiled binaries
 /broker
+/loadtest
+/shardproto
 /cmd/broker/broker
 /bin/
 *.exe
