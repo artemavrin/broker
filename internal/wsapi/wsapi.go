@@ -75,6 +75,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.log.Warn("ws accept failed", "err", err)
 		return
 	}
+	// The library's default read limit is 32 KiB, well under the configured
+	// payload limit once base64 expansion (~4/3) and JSON framing are added.
+	// Left alone, a legitimate send frame tears the connection down instead of
+	// being accepted, so the socket is raised to the same ceiling the HTTP body
+	// reader uses. Note this governs only what the broker reads: a client must
+	// raise its own read limit to receive messages frames of comparable size.
+	c.SetReadLimit(int64(h.svc.MaxPayload())*2 + 4096)
 
 	sess := h.hub.Add(id.Subject)
 	defer h.hub.Remove(sess)
