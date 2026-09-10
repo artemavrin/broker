@@ -1,5 +1,6 @@
-// Command broker is the message broker server. With the "create-initiator"
-// subcommand it instead provisions a new initiator and prints its secret.
+// Command broker is the message broker server. Subcommands cover the operator
+// side: check inspects the platform, setup performs first-time configuration,
+// create-initiator provisions a participant, version prints the build.
 package main
 
 import (
@@ -27,6 +28,10 @@ import (
 	"github.com/artemavrin/broker/internal/wshub"
 )
 
+// version подставляется при сборке релиза: -ldflags "-X main.version=v1.2.3".
+// Без неё по работающему сервису не понять, какая сборка развёрнута.
+var version = "dev"
+
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(log)
@@ -41,6 +46,8 @@ func main() {
 			exitOnError(runCheck())
 		case "setup":
 			exitOnError(runSetup(os.Args[2:]))
+		case "version":
+			fmt.Println(version)
 		default:
 			fmt.Fprintf(os.Stderr, "неизвестная команда %q\n\n%s", cmd, usage)
 			os.Exit(2)
@@ -59,6 +66,7 @@ const usage = `Использование:
   broker check              проверить площадку: база, права, LISTEN/NOTIFY, темп фиксации
   broker setup [флаги]      первичная настройка: проверка, секреты, миграции, инициатор
   broker create-initiator   создать инициатора и напечатать его секрет
+  broker version            напечатать версию сборки
 
 Флаги setup:
   --env-file PATH           файл переменных окружения (по умолчанию broker.env)
@@ -81,6 +89,9 @@ func runServer(log *slog.Logger) error {
 	// bootstrap logger above is replaced here.
 	log = slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(log)
+	// Первой строкой — версия: по логам развёрнутого сервиса должно быть видно,
+	// какая сборка работает.
+	log.Info("broker starting", "version", version)
 
 	// The signal context governs the whole process lifecycle.
 	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -34,6 +34,18 @@ receivers ─┘                       └─ listener (LISTEN new_message) ─�
 - `internal/wshub` — реестр WS-сессий по `participant id`, мультисессии.
 - `internal/httpapi`, `internal/wsapi` — фронтенды.
 
+## Поставка
+
+Артефакт релиза — **один статический файл**: `CGO_ENABLED=0` даёт бинарь без
+зависимостей, миграции вшиты через `//go:embed`. Ни Go, ни Docker, ни libc
+нужной версии на целевой машине не требуются. Сборка под `linux/amd64` и
+`linux/arm64` идёт в GitHub Actions по тегу `v*` (см. `.github/workflows/`),
+архивы и контрольные суммы прикладываются к релизу.
+
+```bash
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o broker ./cmd/broker
+```
+
 ## Быстрый старт
 
 ### Через docker-compose
@@ -75,6 +87,7 @@ broker                    # запустить сервер
 broker check              # проверить площадку перед развёртыванием
 broker setup              # первичная настройка: проверка, секреты, миграции, инициатор
 broker create-initiator   # создать инициатора и напечатать его секрет
+broker version            # версия сборки
 ```
 
 `setup` доводит пустую площадку до готовой: выполняет те же проверки, что

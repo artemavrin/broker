@@ -1,0 +1,70 @@
+name: CI
+
+# Триггер на ветки, а не на теги: теги обрабатывает release.yml, который
+# вызывает этот же workflow как переиспользуемый, чтобы тесты не гонялись дважды.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Интеграционные тесты работают с настоящей базой: они проверяют очередь на
+    # FOR UPDATE SKIP LOCKED, LISTEN/NOTIFY и миграции, а это на заглушках не
+    # воспроизвести. Без DATABASE_URL такие тесты молча пропускаются, поэтому
+    # база поднимается здесь как сервис.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: broker
+          POSTGRES_PASSWORD: broker
+          POSTGRES_DB: broker
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U broker -d broker"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://broker:broker@127.0.0.1:5432/broker?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Форматирование
+        run: |
+          unformatted=$(gofmt -l cmd internal migrations)
+          if [ -n "$unformatted" ]; then
+            echo "Не отформатировано:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Тесты с детектором гонок
+        run: go test -race ./...
+
+      - name: Сборка статического бинаря
+        run: CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /tmp/broker ./cmd/broker
+
+      # Артефакт поставки — один файл: миграции вшиты через //go:embed. Проверка
+      # запускает бинарь из пустого каталога, чтобы это не разошлось с
+      # обещанием в документации.
+      - name: Проверка, что бинарь самодостаточен
+        run: |
+          mkdir -p /tmp/isolated && cp /tmp/broker /tmp/isolated/
+          cd /tmp/isolated
+          ./broker version
+          ./broker check

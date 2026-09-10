@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # нужно, чтобы создать релиз и приложить файлы
+
+jobs:
+  # Тег может указывать на коммит, который не проходил проверки, поэтому релиз
+  # публикуется только после того же набора, что и обычная сборка.
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # CGO отключён, поэтому бинарь статический и кросс-сборка не требует
+      # тулчейна для целевой архитектуры. Миграции вшиты, так что в архиве
+      # лежит один файл.
+      - name: Сборка под linux/amd64 и linux/arm64
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
+              -trimpath \
+              -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -o dist/broker ./cmd/broker
+            tar -C dist -czf "dist/broker_${GITHUB_REF_NAME}_linux_${arch}.tar.gz" broker
+            rm dist/broker
+          done
+
+      - name: Контрольные суммы
+        run: cd dist && sha256sum *.tar.gz > checksums.txt
+
+      # gh предустановлен на раннере, поэтому сторонний экшен не нужен.
+      - name: Публикация релиза
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag

@@ -10,9 +10,14 @@
 *.out
 coverage.*
 
+# Release artefacts (собираются в CI)
+/dist/
+
 # Local env
 .env
 .env.local
+# Файл переменных, который создаёт `broker setup`: содержит секреты
+broker.env
 
 # Editor/OS noise
 .DS_Store
