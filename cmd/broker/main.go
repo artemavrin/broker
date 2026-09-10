@@ -49,6 +49,10 @@ func runServer(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// The configured level is only known once the config is loaded, so the
+	// bootstrap logger above is replaced here.
+	log = slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	slog.SetDefault(log)
 
 	// The signal context governs the whole process lifecycle.
 	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

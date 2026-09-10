@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -20,9 +21,10 @@ type Config struct {
 	MaxPayloadBytes   int
 	ListenChannel     string
 	MigrationsDir     string
-	AuthRatePerMin    int    // per-IP /auth/token requests per minute; 0 disables
-	AdminToken        string // gates the /admin dashboard; empty disables it
-	PprofAddr         string // if set, serves net/http/pprof on this addr
+	AuthRatePerMin    int        // per-IP /auth/token requests per minute; 0 disables
+	AdminToken        string     // gates the /admin dashboard; empty disables it
+	PprofAddr         string     // if set, serves net/http/pprof on this addr
+	LogLevel          slog.Level // minimum level the logger emits
 }
 
 // Load reads configuration from the environment, applying defaults for
@@ -40,6 +42,7 @@ func Load() (*Config, error) {
 		AuthRatePerMin:    60,
 		AdminToken:        os.Getenv("ADMIN_TOKEN"),
 		PprofAddr:         os.Getenv("PPROF_ADDR"),
+		LogLevel:          slog.LevelInfo,
 	}
 
 	if c.DatabaseURL == "" {
@@ -76,6 +79,14 @@ func Load() (*Config, error) {
 	if v := os.Getenv("AUTH_RATE_PER_MIN"); v != "" {
 		if c.AuthRatePerMin, err = strconv.Atoi(v); err != nil || c.AuthRatePerMin < 0 {
 			return nil, fmt.Errorf("AUTH_RATE_PER_MIN must be a non-negative integer")
+		}
+	}
+	// Accepts the slog level names (debug/info/warn/error, case-insensitive,
+	// with an optional offset such as "warn-2"). Dropping to debug is what
+	// surfaces routine disconnects, which are deliberately not errors.
+	if v := os.Getenv("LOG_LEVEL"); v != "" {
+		if err := c.LogLevel.UnmarshalText([]byte(v)); err != nil {
+			return nil, fmt.Errorf("LOG_LEVEL: %w", err)
 		}
 	}
 

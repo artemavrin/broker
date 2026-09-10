@@ -82,6 +82,7 @@ go run ./cmd/broker
 | `AUTH_RATE_PER_MIN` | `60` | лимит `/auth/token` на IP в минуту (`0` — выкл.) |
 | `ADMIN_TOKEN` | — | включает админ-дашборд `/admin/` (пусто — выключен) |
 | `PPROF_ADDR` | — | адрес приватного pprof-эндпоинта (пусто — выключен) |
+| `LOG_LEVEL` | `info` | минимальный уровень логов: `debug`/`info`/`warn`/`error` |
 
 ## REST API
 
