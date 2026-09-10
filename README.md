@@ -39,12 +39,105 @@ receivers ─┘                       └─ listener (LISTEN new_message) ─�
 Артефакт релиза — **один статический файл**: `CGO_ENABLED=0` даёт бинарь без
 зависимостей, миграции вшиты через `//go:embed`. Ни Go, ни Docker, ни libc
 нужной версии на целевой машине не требуются. Сборка под `linux/amd64` и
-`linux/arm64` идёт в GitHub Actions по тегу `v*` (см. `.github/workflows/`),
-архивы и контрольные суммы прикладываются к релизу.
+`linux/arm64` идёт в GitHub Actions, архивы и контрольные суммы прикладываются
+к релизу.
 
 ```bash
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o broker ./cmd/broker
 ```
+
+### Как выпустить релиз
+
+Номер версии задаёт файл [`VERSION`](VERSION) — он подставляется в бинарь
+(`broker version`) и в имена архивов. Релиз выпускается изменением этого файла
+в `main`: `.github/workflows/release.yml` прогоняет полный набор проверок,
+собирает обе архитектуры и создаёт тег с релизом через `gh` на том коммите,
+который эти проверки прошёл. Тег вручную пушить не нужно — и по построению он
+не может указывать на непроверенный код. Повторный запуск на неизменённой
+версии останавливается, чтобы не перезаписать опубликованный релиз.
+
+## Установка
+
+На целевой машине нужны только Linux (x86-64 или arm64) и доступный
+PostgreSQL 16+. Всё остальное — в бинаре.
+
+```bash
+# 1. Скачать архив и проверить целостность
+V=v1.0.0
+base=https://github.com/artemavrin/broker/releases/download/$V
+curl -fsSL -O "$base/broker_${V}_linux_amd64.tar.gz"
+curl -fsSL -O "$base/checksums.txt"
+sha256sum -c --ignore-missing checksums.txt
+
+# 2. Положить на место
+sudo tar -xzf "broker_${V}_linux_amd64.tar.gz" -C /usr/local/bin
+broker version
+
+# 3. Базу и роль создаёт администратор СУБД (нужны права суперпользователя)
+#    CREATE ROLE broker LOGIN PASSWORD '<пароль>';
+#    CREATE DATABASE broker OWNER broker;
+#    Расширение pgcrypto брокер создаёт сам: в PG16 оно trusted.
+
+# 4. Проверить площадку до установки — команда ничего не меняет
+export DATABASE_URL="postgres://broker:<пароль>@<хост>:5432/broker?sslmode=require"
+broker check
+
+# 5. Первичная настройка: секреты, миграции, первый инициатор
+sudo install -d -m 0750 /etc/broker
+sudo -E broker setup --env-file /etc/broker/broker.env
+
+# 6. Запустить как службу (юнит — ниже) и проверить
+sudo systemctl enable --now broker
+curl -fsS http://127.0.0.1:8080/healthz
+```
+
+Юнит systemd (`/etc/systemd/system/broker.service`); сервис ничего не пишет на
+диск, поэтому ограничения безопасные:
+
+```ini
+[Unit]
+Description=Брокер сообщений
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=broker
+EnvironmentFile=/etc/broker/broker.env
+ExecStart=/usr/local/bin/broker
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Наружу брокер публикуется обратным прокси: он слушает обычный HTTP, а прокси
+добавляет TLS. Существенны две вещи — заголовки перехода на WebSocket и
+таймаут простоя больше 20 секунд (брокер держит соединение проверочными
+пакетами с этим интервалом):
+
+```nginx
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 120s;
+}
+```
+
+Обновление — замена файла и перезапуск: `broker check` на новой версии,
+`systemctl stop broker`, распаковка архива поверх, `systemctl start broker`.
+Миграции новая версия применяет сама при запуске.
 
 ## Быстрый старт
 
