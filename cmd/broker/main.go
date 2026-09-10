@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -30,16 +31,36 @@ func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(log)
 
-	if len(os.Args) > 1 && os.Args[1] == "create-initiator" {
-		if err := runCreateInitiator(); err != nil {
-			log.Error("create-initiator failed", "err", err)
-			os.Exit(1)
+	// Подкоманды печатают результат человеку, поэтому об ошибке сообщают
+	// строкой в stderr, а не структурным логом, предназначенным для сбора.
+	if len(os.Args) > 1 {
+		switch cmd := os.Args[1]; cmd {
+		case "create-initiator":
+			exitOnError(runCreateInitiator())
+		case "check":
+			exitOnError(runCheck())
+		default:
+			fmt.Fprintf(os.Stderr, "неизвестная команда %q\n\n%s", cmd, usage)
+			os.Exit(2)
 		}
 		return
 	}
 
 	if err := runServer(log); err != nil {
 		log.Error("server exited with error", "err", err)
+		os.Exit(1)
+	}
+}
+
+const usage = `Использование:
+  broker                    запустить сервер
+  broker check              проверить площадку: база, права, LISTEN/NOTIFY, темп фиксации
+  broker create-initiator   создать инициатора и напечатать его секрет
+`
+
+func exitOnError(err error) {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }

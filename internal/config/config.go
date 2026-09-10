@@ -95,6 +95,27 @@ func Load() (*Config, error) {
 	return c, nil
 }
 
+// Platform holds only what the `check` subcommand needs. It exists because
+// that command runs before any secrets are in place — requiring
+// JWT_SIGNING_KEY to inspect a database would defeat the purpose of a
+// pre-deployment check.
+type Platform struct {
+	DatabaseURL   string
+	ListenChannel string
+}
+
+// LoadPlatform reads the database settings alone.
+func LoadPlatform() (*Platform, error) {
+	url := os.Getenv("DATABASE_URL")
+	if url == "" {
+		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+	return &Platform{
+		DatabaseURL:   url,
+		ListenChannel: getenv("LISTEN_CHANNEL", "new_message"),
+	}, nil
+}
+
 func getenv(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
