@@ -20,7 +20,7 @@ type Config struct {
 	MaxFetch          int
 	MaxPayloadBytes   int
 	ListenChannel     string
-	MigrationsDir     string
+	MigrationsDir     string     // empty: use the migrations embedded in the binary
 	AuthRatePerMin    int        // per-IP /auth/token requests per minute; 0 disables
 	AdminToken        string     // gates the /admin dashboard; empty disables it
 	PprofAddr         string     // if set, serves net/http/pprof on this addr
@@ -38,11 +38,13 @@ func Load() (*Config, error) {
 		MaxFetch:          100,
 		MaxPayloadBytes:   262144, // 256 KiB
 		ListenChannel:     getenv("LISTEN_CHANNEL", "new_message"),
-		MigrationsDir:     getenv("MIGRATIONS_DIR", "migrations"),
-		AuthRatePerMin:    60,
-		AdminToken:        os.Getenv("ADMIN_TOKEN"),
-		PprofAddr:         os.Getenv("PPROF_ADDR"),
-		LogLevel:          slog.LevelInfo,
+		// Empty means the migrations embedded in the binary; a path overrides
+		// them with files on disk (development, tests).
+		MigrationsDir:  os.Getenv("MIGRATIONS_DIR"),
+		AuthRatePerMin: 60,
+		AdminToken:     os.Getenv("ADMIN_TOKEN"),
+		PprofAddr:      os.Getenv("PPROF_ADDR"),
+		LogLevel:       slog.LevelInfo,
 	}
 
 	if c.DatabaseURL == "" {

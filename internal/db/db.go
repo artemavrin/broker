@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/artemavrin/broker/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -44,8 +45,13 @@ func (db *DB) URL() string { return db.url }
 // Close drains the pool.
 func (db *DB) Close() { db.pool.Close() }
 
-// Migrate applies all goose migrations found in dir using a temporary
-// database/sql connection backed by the pgx stdlib driver.
+// Migrate applies the schema migrations using a temporary database/sql
+// connection backed by the pgx stdlib driver.
+//
+// An empty dir uses the migrations embedded in the binary, which is what a
+// deployed broker does — the release artefact then needs no files beside it.
+// A non-empty dir reads them from disk instead, for development and tests that
+// run against a working copy.
 func (db *DB) Migrate(ctx context.Context, dir string) error {
 	sqlDB := stdlib.OpenDBFromPool(db.pool)
 	defer sqlDB.Close()
@@ -56,6 +62,13 @@ func runGoose(ctx context.Context, sqlDB *sql.DB, dir string) error {
 	goose.SetLogger(goose.NopLogger())
 	if err := goose.SetDialect("postgres"); err != nil {
 		return err
+	}
+	if dir == "" {
+		// goose keeps the base FS in a package-level variable, so it is set for
+		// this call only and restored afterwards.
+		goose.SetBaseFS(migrations.FS)
+		defer goose.SetBaseFS(nil)
+		dir = "."
 	}
 	return goose.UpContext(ctx, sqlDB, dir)
 }
