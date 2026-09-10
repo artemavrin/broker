@@ -43,7 +43,7 @@ func (a *API) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		a.log.Error("token lookup failed", "err", err)
+		a.logFailure("token lookup failed", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}

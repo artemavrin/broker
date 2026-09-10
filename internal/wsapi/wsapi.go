@@ -38,6 +38,18 @@ func New(svc *core.Service, signer *auth.Signer, hub *wshub.Hub, log *slog.Logge
 	return &Handler{svc: svc, signer: signer, hub: hub, log: log}
 }
 
+// logFailure records a frame failure, demoting a session that merely went away
+// to debug level: tearing down a connection cancels its context, so a routine
+// disconnect would otherwise surface as an error on every in-flight fetch or
+// ack.
+func (h *Handler) logFailure(msg string, err error) {
+	if core.Disconnected(err) {
+		h.log.Debug(msg, "err", err)
+		return
+	}
+	h.log.Error(msg, "err", err)
+}
+
 // inbound is the union of all client→server frames.
 type inbound struct {
 	Type        string  `json:"type"`
@@ -166,7 +178,7 @@ func (h *Handler) dispatch(ctx context.Context, id auth.Identity, in inbound, ou
 func (h *Handler) doFetch(ctx context.Context, id auth.Identity, in inbound, out chan<- any) {
 	msgs, err := h.svc.Fetch(ctx, id, in.Max)
 	if err != nil {
-		h.log.Error("ws fetch failed", "err", err)
+		h.logFailure("ws fetch failed", err)
 		h.send(ctx, out, errorFrame("internal", "fetch failed"))
 		return
 	}
@@ -184,7 +196,7 @@ func (h *Handler) doFetch(ctx context.Context, id auth.Identity, in inbound, out
 
 func (h *Handler) doAck(ctx context.Context, id auth.Identity, in inbound, out chan<- any) {
 	if _, err := h.svc.Ack(ctx, id, in.IDs); err != nil {
-		h.log.Error("ws ack failed", "err", err)
+		h.logFailure("ws ack failed", err)
 		h.send(ctx, out, errorFrame("internal", "ack failed"))
 		return
 	}
@@ -208,7 +220,7 @@ func (h *Handler) doSend(ctx context.Context, id auth.Identity, in inbound, out 
 	case errors.Is(err, core.ErrPolicy):
 		h.send(ctx, out, errorFrame("policy", "destination not permitted"))
 	case err != nil:
-		h.log.Error("ws send failed", "err", err)
+		h.logFailure("ws send failed", err)
 		h.send(ctx, out, errorFrame("internal", "send failed"))
 	case !inserted:
 		h.send(ctx, out, frameSent{Type: "sent", Duplicate: true})

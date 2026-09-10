@@ -82,7 +82,7 @@ func (a *API) handleSend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "destination not permitted")
 		return
 	case err != nil:
-		a.log.Error("send failed", "err", err)
+		a.logFailure("send failed", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -113,7 +113,7 @@ func (a *API) handleFetch(w http.ResponseWriter, r *http.Request) {
 
 	msgs, err := a.svc.Fetch(r.Context(), id, max)
 	if err != nil {
-		a.log.Error("fetch failed", "err", err)
+		a.logFailure("fetch failed", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -146,7 +146,7 @@ func (a *API) handleAck(w http.ResponseWriter, r *http.Request) {
 	}
 	n, err := a.svc.Ack(r.Context(), id, req.IDs)
 	if err != nil {
-		a.log.Error("ack failed", "err", err)
+		a.logFailure("ack failed", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}

@@ -71,6 +71,17 @@ func identity(r *http.Request) (auth.Identity, bool) {
 	return *id, true
 }
 
+// logFailure records a handler failure, demoting a caller that merely went
+// away to debug level so ordinary disconnects do not read as incidents in the
+// error log.
+func (a *API) logFailure(msg string, err error) {
+	if core.Disconnected(err) {
+		a.log.Debug(msg, "err", err)
+		return
+	}
+	a.log.Error(msg, "err", err)
+}
+
 // writeJSON encodes v as JSON with the given status.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

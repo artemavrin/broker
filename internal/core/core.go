@@ -27,6 +27,16 @@ var (
 	ErrNotFound = errors.New("not found")
 )
 
+// Disconnected reports whether err only means the caller went away: a closed
+// connection or a shutting-down server cancels the request context, so queries
+// still in flight come back with context.Canceled. Transports use this to keep
+// ordinary disconnects out of the error log — a receiver dropping off is
+// routine, not an incident. A deadline that expired is deliberately not
+// included: that is a real timeout worth reporting.
+func Disconnected(err error) bool {
+	return errors.Is(err, context.Canceled)
+}
+
 // Service bundles the database and the policy knobs.
 type Service struct {
 	db            *db.DB

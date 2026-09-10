@@ -37,7 +37,7 @@ func (a *API) handleCreateReceiver(w http.ResponseWriter, r *http.Request) {
 	}
 	rid, rawSecret, err := a.svc.NewReceiver(r.Context(), id.Subject)
 	if err != nil {
-		a.log.Error("create receiver failed", "err", err)
+		a.logFailure("create receiver failed", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -55,7 +55,7 @@ func (a *API) handleListReceivers(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := a.svc.ListReceivers(r.Context(), id.Subject)
 	if err != nil {
-		a.log.Error("list receivers failed", "err", err)
+		a.logFailure("list receivers failed", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -76,7 +76,7 @@ func (a *API) handleDeleteReceiver(w http.ResponseWriter, r *http.Request) {
 		// probe for the existence of receivers they do not own.
 		writeError(w, http.StatusForbidden, "not the owner")
 	case err != nil:
-		a.log.Error("revoke receiver failed", "err", err)
+		a.logFailure("revoke receiver failed", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 	default:
 		w.WriteHeader(http.StatusNoContent)
