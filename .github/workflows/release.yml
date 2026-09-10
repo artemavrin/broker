@@ -1,15 +1,20 @@
 name: Release
 
+# Релиз выпускается изменением файла VERSION в main, а не пушем тега: тег
+# создаёт сам workflow через gh, и он гарантированно указывает на коммит,
+# прошедший проверки. VERSION — единственный источник номера версии: он же
+# попадает в бинарь (broker version) и в имена архивов.
 on:
   push:
-    tags: ["v*"]
+    branches: ["main"]
+    paths: ["VERSION"]
+  workflow_dispatch:
 
 permissions:
-  contents: write # нужно, чтобы создать релиз и приложить файлы
+  contents: write # нужно, чтобы создать тег, релиз и приложить файлы
 
 jobs:
-  # Тег может указывать на коммит, который не проходил проверки, поэтому релиз
-  # публикуется только после того же набора, что и обычная сборка.
+  # Публикация идёт только после того же набора проверок, что и обычная сборка.
   test:
     uses: ./.github/workflows/ci.yml
 
@@ -24,26 +29,56 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Номер версии
+        id: v
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          case "$version" in
+            v[0-9]*) ;;
+            *) echo "VERSION должен содержать тег вида v1.2.3, а содержит: '$version'" >&2
+               exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Повторный запуск на неизменённой версии не должен перезаписывать релиз.
+      - name: Проверка, что версия ещё не выпущена
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Релиз $VERSION уже опубликован — поднимите VERSION." >&2
+            exit 1
+          fi
+
       # CGO отключён, поэтому бинарь статический и кросс-сборка не требует
       # тулчейна для целевой архитектуры. Миграции вшиты, так что в архиве
       # лежит один файл.
       - name: Сборка под linux/amd64 и linux/arm64
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
         run: |
           mkdir -p dist
           for arch in amd64 arm64; do
             CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
               -trimpath \
-              -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -ldflags="-s -w -X main.version=${VERSION}" \
               -o dist/broker ./cmd/broker
-            tar -C dist -czf "dist/broker_${GITHUB_REF_NAME}_linux_${arch}.tar.gz" broker
+            tar -C dist -czf "dist/broker_${VERSION}_linux_${arch}.tar.gz" broker
             rm dist/broker
           done
 
       - name: Контрольные суммы
         run: cd dist && sha256sum *.tar.gz > checksums.txt
 
-      # gh предустановлен на раннере, поэтому сторонний экшен не нужен.
+      # gh предустановлен на раннере, поэтому сторонний экшен не нужен. Тег
+      # создаётся здесь же, на текущем коммите.
       - name: Публикация релиза
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          gh release create "$VERSION" dist/* \
+            --title "$VERSION" \
+            --target "$GITHUB_SHA" \
+            --generate-notes
