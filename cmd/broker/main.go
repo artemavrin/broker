@@ -39,6 +39,8 @@ func main() {
 			exitOnError(runCreateInitiator())
 		case "check":
 			exitOnError(runCheck())
+		case "setup":
+			exitOnError(runSetup(os.Args[2:]))
 		default:
 			fmt.Fprintf(os.Stderr, "неизвестная команда %q\n\n%s", cmd, usage)
 			os.Exit(2)
@@ -55,7 +57,12 @@ func main() {
 const usage = `Использование:
   broker                    запустить сервер
   broker check              проверить площадку: база, права, LISTEN/NOTIFY, темп фиксации
+  broker setup [флаги]      первичная настройка: проверка, секреты, миграции, инициатор
   broker create-initiator   создать инициатора и напечатать его секрет
+
+Флаги setup:
+  --env-file PATH           файл переменных окружения (по умолчанию broker.env)
+  --no-initiator            не создавать первого инициатора
 `
 
 func exitOnError(err error) {

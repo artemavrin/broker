@@ -59,14 +59,34 @@ func runCheck() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
+	results := platformChecks(ctx, cfg)
+	report(results)
+	if anyFailed(results) {
+		return errors.New("площадка не готова: см. отказы выше")
+	}
+	return nil
+}
+
+func anyFailed(results []checkResult) bool {
+	for _, r := range results {
+		if r.status == statusFail {
+			return true
+		}
+	}
+	return false
+}
+
+// platformChecks открывает своё соединение и выполняет весь набор проверок.
+// Вынесено отдельно, чтобы setup выполнял ровно те же проверки, а не свой
+// похожий набор, который со временем разойдётся.
+func platformChecks(ctx context.Context, cfg *config.Platform) []checkResult {
 	conn, err := pgx.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
-		report([]checkResult{{
+		return []checkResult{{
 			name:   "Подключение к базе",
 			detail: err.Error(),
 			status: statusFail,
-		}})
-		return errors.New("площадка не готова: база недоступна")
+		}}
 	}
 	defer conn.Close(ctx)
 
@@ -89,14 +109,7 @@ func runCheck() error {
 	} else {
 		results = append(results, checkCommitRate(ctx, conn))
 	}
-	report(results)
-
-	for _, r := range results {
-		if r.status == statusFail {
-			return errors.New("площадка не готова: см. отказы выше")
-		}
-	}
-	return nil
+	return results
 }
 
 func checkVersion(ctx context.Context, conn *pgx.Conn) checkResult {
