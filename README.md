@@ -86,7 +86,10 @@ broker check
 sudo install -d -m 0750 /etc/broker
 sudo -E broker setup --env-file /etc/broker/broker.env
 
-# 6. Запустить как службу (юнит — ниже) и проверить
+# 6. Учётная запись службы: без неё systemd не стартует юнит с User=broker
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin broker
+
+# 7. Запустить как службу (юнит — ниже) и проверить
 sudo systemctl enable --now broker
 curl -fsS http://127.0.0.1:8080/healthz
 ```
@@ -133,7 +136,23 @@ location / {
     proxy_set_header Connection $connection_upgrade;
     proxy_read_timeout 120s;
 }
+
+location /admin/ {          # дашборд не выпускаем в интернет
+    allow 10.0.0.0/8;
+    deny all;
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+}
 ```
+
+Две вещи, о которых легко забыть за прокси:
+
+- **`client_max_body_size`** (по умолчанию 1 МБ) ограничивает `send` раньше
+  брокера. При штатных 256 КБ payload запас есть — в base64 это ~350 КБ, — но
+  подъём `MAX_PAYLOAD_BYTES` требует поднять и его.
+- **`AUTH_RATE_PER_MIN` считается по адресу источника**, а за прокси источник
+  один на всех: 60/мин делятся на весь парк клиентов. Значение выбирается под
+  пик переподключений, `0` снимает лимит.
 
 Обновление — замена файла и перезапуск: `broker check` на новой версии,
 `systemctl stop broker`, распаковка архива поверх, `systemctl start broker`.
