@@ -144,6 +144,27 @@ func readEnvFile(path string) (map[string]string, error) {
 	return values, scanner.Err()
 }
 
+// applyEnvFile загружает файл переменных в окружение процесса там, где его
+// некому подставить (служба Windows). Уже заданные переменные не трогает.
+func applyEnvFile(path string) error {
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("файл переменных: %w", err)
+	}
+	values, err := readEnvFile(path)
+	if err != nil {
+		return err
+	}
+	for k, v := range values {
+		if _, set := os.LookupEnv(k); set {
+			continue
+		}
+		if err := os.Setenv(k, v); err != nil {
+			return fmt.Errorf("установка %s: %w", k, err)
+		}
+	}
+	return nil
+}
+
 func renderEnv(values map[string]string) string {
 	keys := make([]string, 0, len(values))
 	for k := range values {

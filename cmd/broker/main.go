@@ -36,6 +36,16 @@ func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(log)
 
+	// Под Windows процесс может запустить диспетчер служб — тогда аргументы
+	// это флаги службы, а не подкоманда.
+	if handled, err := runIfService(); handled || err != nil {
+		if err != nil {
+			log.Error("service failed", "err", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Подкоманды печатают результат человеку, поэтому об ошибке сообщают
 	// строкой в stderr, а не структурным логом, предназначенным для сбора.
 	if len(os.Args) > 1 {
@@ -55,7 +65,7 @@ func main() {
 		return
 	}
 
-	if err := runServer(log); err != nil {
+	if err := runServer(context.Background(), log); err != nil {
 		log.Error("server exited with error", "err", err)
 		os.Exit(1)
 	}
@@ -71,6 +81,10 @@ const usage = `Использование:
 Флаги setup:
   --env-file PATH           файл переменных окружения (по умолчанию broker.env)
   --no-initiator            не создавать первого инициатора
+
+Служба Windows (флаги передаются в binPath, режим включается сам при запуске из SCM):
+  --env-file PATH           файл переменных (по умолчанию broker.env рядом с exe)
+  --log-file PATH           файл журнала (по умолчанию broker.log рядом с exe)
 `
 
 func exitOnError(err error) {
@@ -80,7 +94,8 @@ func exitOnError(err error) {
 	}
 }
 
-func runServer(log *slog.Logger) error {
+// runServer работает, пока не отменён ctx или не пришёл SIGINT/SIGTERM.
+func runServer(ctx context.Context, log *slog.Logger) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -94,7 +109,7 @@ func runServer(log *slog.Logger) error {
 	log.Info("broker starting", "version", version)
 
 	// The signal context governs the whole process lifecycle.
-	rootCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	rootCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	connectCtx, cancel := context.WithTimeout(rootCtx, 10*time.Second)
