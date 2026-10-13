@@ -167,12 +167,19 @@ Caddy с сертификатом Let's Encrypt. Без своего домен�
 `<ip-через-дефисы>.sslip.io` — скрипт предложит его сам.
 
 ```powershell
-# Одна строка в PowerShell от имени администратора; git не нужен
-[Net.ServicePointManager]::SecurityProtocol='Tls12'; iwr https://github.com/artemavrin/broker/releases/latest/download/install.ps1 -OutFile $env:TEMP\broker-install.ps1 -UseBasicParsing; powershell -ExecutionPolicy Bypass -File $env:TEMP\broker-install.ps1
+# PowerShell от имени администратора; git не нужен
+irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1 | iex
 ```
 
-Параметры дописываются в конец строки, например `-Domain 203-0-113-5.sslip.io`
-или `-Version v1.1.0`.
+С параметрами (например, чтобы не спрашивал домен):
+
+```powershell
+iex "& {$(irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1)} -Domain 203-0-113-5.sslip.io"
+```
+
+Если `irm` ругается «Не удалось создать защищённый канал SSL/TLS» — в старом
+PowerShell выключен TLS 1.2; включить его в текущем окне и повторить:
+`[Net.ServicePointManager]::SecurityProtocol='Tls12'`.
 
 Повторный запуск безопасен и им же обновляется версия (`-Version vX.Y.Z`).
 Брокер умеет работать службой сам, без обёрток: при запуске из диспетчера
