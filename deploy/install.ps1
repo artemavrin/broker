@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   Установка брокера на Windows Server 2019+ без Docker: PostgreSQL 16,
-  брокер как служба Windows, Caddy с сертификатом Let's Encrypt, файрвол.
+  брокер как служба Windows, Caddy с сертификатом Let's Encrypt (на IP или домен), файрвол.
 
 .DESCRIPTION
   Скрипт идёт по шагам и на каждом проверяет, что уже сделано, поэтому
@@ -14,8 +14,8 @@
   irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1 | iex
 
 .EXAMPLE
-  # С параметрами — без вопросов:
-  iex "& {$(irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1)} -Domain 203-0-113-5.sslip.io"
+  # С параметрами — без вопросов (сертификат на IP или на свой домен):
+  iex "& {$(irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1)} -Address 203.0.113.5"
 
 .NOTES
   Файл хранится в UTF-8 без BOM: BOM ломает запуск через iex (param перестаёт
@@ -27,8 +27,10 @@
 param(
     # Тег релиза брокера; latest — последний опубликованный.
     [string]$Version = 'latest',
-    # Имя для HTTPS. Пусто — спросить (с подсказкой <ip>.sslip.io); '-' — без HTTPS.
-    [string]$Domain,
+    # Адрес для HTTPS: IP или домен. Пусто — спросить (по умолчанию внешний IP);
+    # '-' — без HTTPS. -Domain оставлен как синоним для старых команд.
+    [Alias('Domain')]
+    [string]$Address,
     [string]$InstallDir = (Join-Path $env:ProgramFiles 'broker'),
     [string]$DataDir = (Join-Path $env:ProgramData 'broker'),
     # Пароль суперпользователя postgres, если PostgreSQL уже стоит. Пусто — спросить.
@@ -115,6 +117,35 @@ function Read-EnvValue([string]$file, [string]$key) {
     return ($line -split '=', 2)[1].Trim()
 }
 
+# Caddyfile для адреса брокера. Дашборд /admin/ в интернет не публикуется: он
+# доступен на сервере по http://127.0.0.1:<порт>/admin/.
+# На IP Caddy по умолчанию выпускает самоподписанный сертификат, поэтому
+# Let's Encrypt задаётся явно: на IP он выдаёт сертификаты только с профилем
+# shortlived (срок около 6 дней, Caddy продлевает сам). Клиенты, которые
+# подключаются по IP, не передают имя сервера (SNI) — отсюда default_sni.
+function New-Caddyfile([string]$address, [int]$port, [string]$dataDir, [string]$logFile) {
+    $globalExtra = ''
+    $tls = ''
+    if ($address -match '^\d{1,3}(\.\d{1,3}){3}$') {
+        $globalExtra = "`n`tdefault_sni $address"
+        $tls = "`n`ttls {`n`t`tissuer acme {`n`t`t`tprofile shortlived`n`t`t}`n`t}"
+    }
+    return @"
+{
+	storage file_system $dataDir$globalExtra
+	log {
+		output file $logFile
+	}
+}
+
+$address {$tls
+	@admin path /admin /admin/*
+	respond @admin 403
+	reverse_proxy 127.0.0.1:$port
+}
+"@
+}
+
 $tmp = Join-Path $env:TEMP ('broker-install-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 
@@ -140,23 +171,22 @@ try {
     }
 
     # Все вопросы задаются здесь, чтобы дальше скрипт шёл без участия человека.
-    if (-not $Domain) {
-        $suggest = $null
+    if (-not $Address) {
+        $ip = $null
         try {
             $ip = (Invoke-RestMethod -Uri 'https://api.ipify.org' -TimeoutSec 10).ToString().Trim()
-            $suggest = ($ip -replace '\.', '-') + '.sslip.io'
             Info "внешний IP: $ip"
         } catch { Warn 'не удалось определить внешний IP' }
-        Info 'Для HTTPS нужно имя. Без своего домена подойдёт <ip>.sslip.io — оно резолвится в ваш IP.'
-        $prompt = 'Домен для HTTPS'
-        if ($suggest) { $prompt += " [$suggest]" }
+        Info 'Сертификат Let''s Encrypt выпускается прямо на IP; свой домен — по желанию.'
+        $prompt = 'Адрес для HTTPS (IP или домен)'
+        if ($ip) { $prompt += " [$ip]" }
         $answer = Read-Host "$prompt, '-' — без HTTPS"
-        if ($answer) { $Domain = $answer.Trim() } elseif ($suggest) { $Domain = $suggest } else { $Domain = '-' }
+        if ($answer) { $Address = $answer.Trim() } elseif ($ip) { $Address = $ip } else { $Address = '-' }
     }
-    if ($Domain -eq '-') {
+    if ($Address -eq '-') {
         Warn 'HTTPS не настраивается: брокер будет доступен только с этой машины (127.0.0.1)'
     } else {
-        Ok "домен: $Domain"
+        Ok "адрес: $Address"
     }
 
     $pgService = Get-Service -Name 'postgresql*' -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -323,7 +353,7 @@ try {
     # ---------------------------------------------------------------------
     Step 'HTTPS: Caddy и Let''s Encrypt'
 
-    if ($Domain -eq '-') {
+    if ($Address -eq '-') {
         Info 'пропущено'
     } else {
         $caddyDir = Join-Path $InstallDir 'caddy'
@@ -345,23 +375,7 @@ try {
         $caddyData = (Join-Path $DataDir 'caddy') -replace '\\', '/'
         $caddyLog = (Join-Path $logDir 'caddy.log') -replace '\\', '/'
         $caddyfile = Join-Path $DataDir 'Caddyfile'
-        # Дашборд /admin/ в интернет не публикуем: он доступен на сервере
-        # по http://127.0.0.1:<порт>/admin/.
-        $content = @"
-{
-	storage file_system $caddyData
-	log {
-		output file $caddyLog
-	}
-}
-
-$Domain {
-	@admin path /admin /admin/*
-	respond @admin 403
-	reverse_proxy 127.0.0.1:$Port
-}
-"@
-        Set-Content -Path $caddyfile -Value $content -Encoding ascii
+        Set-Content -Path $caddyfile -Value (New-Caddyfile $Address $Port $caddyData $caddyLog) -Encoding ascii
         Invoke-Native 'caddy validate' { & $caddyExe validate --config $caddyfile --adapter caddyfile 2>&1 | Out-Null }
         Ok "Caddyfile: $caddyfile"
 
@@ -385,10 +399,10 @@ $Domain {
 
         Start-Service -Name $CaddyServiceName
         Info 'получение сертификата Let''s Encrypt (до 2 минут)…'
-        if (Wait-Http "https://$Domain/healthz" 120) {
-            Ok "https://$Domain/healthz отвечает"
+        if (Wait-Http "https://$Address/healthz" 120) {
+            Ok "https://$Address/healthz отвечает"
         } else {
-            Warn "https://$Domain/healthz не ответил. Частые причины: порты 80/443 закрыты у хостера,"
+            Warn "https://$Address/healthz не ответил. Частые причины: порты 80/443 закрыты у хостера,"
             Warn "имя не указывает на этот сервер. Журнал Caddy: $caddyLog"
         }
     }
@@ -396,7 +410,7 @@ $Domain {
     # ---------------------------------------------------------------------
     Write-Host ''
     Write-Host 'Готово.' -ForegroundColor Green
-    if ($Domain -ne '-') { Info "Адрес брокера:      https://$Domain" }
+    if ($Address -ne '-') { Info "Адрес брокера:      https://$Address" }
     Info "Дашборд (на сервере): http://127.0.0.1:$Port/admin/  (токен — ADMIN_TOKEN в $envFile)"
     Info "Настройки и секреты:  $envFile"
     Info "Журнал:               Get-Content '$logFile' -Tail 50 -Wait"

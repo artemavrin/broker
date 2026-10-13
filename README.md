@@ -163,18 +163,19 @@ location /admin/ {          # дашборд не выпускаем в инте
 На Windows Server 2019 Docker с Linux-контейнерами недоступен (нет ни Docker
 Desktop, ни WSL2), поэтому установка нативная: скрипт `deploy/install.ps1`
 ставит PostgreSQL 16, регистрирует брокер службой Windows и публикует его через
-Caddy с сертификатом Let's Encrypt. Без своего домена подойдёт имя
-`<ip-через-дефисы>.sslip.io` — скрипт предложит его сам.
+Caddy с сертификатом Let's Encrypt. Свой домен не нужен: сертификат
+выпускается прямо на внешний IP (профиль `shortlived`, срок около 6 дней,
+Caddy продлевает сам). Снаружи должны быть открыты порты 443 и 80.
 
 ```powershell
 # PowerShell от имени администратора; git не нужен
 irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1 | iex
 ```
 
-С параметрами (например, чтобы не спрашивал домен):
+С параметрами (например, чтобы не спрашивал адрес; подойдёт IP или домен):
 
 ```powershell
-iex "& {$(irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1)} -Domain 203-0-113-5.sslip.io"
+iex "& {$(irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1)} -Address 203.0.113.5"
 ```
 
 Если `irm` ругается «Не удалось создать защищённый канал SSL/TLS» — в старом
