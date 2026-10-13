@@ -158,6 +158,28 @@ location /admin/ {          # дашборд не выпускаем в инте
 `systemctl stop broker`, распаковка архива поверх, `systemctl start broker`.
 Миграции новая версия применяет сама при запуске.
 
+### Windows Server
+
+На Windows Server 2019 Docker с Linux-контейнерами недоступен (нет ни Docker
+Desktop, ни WSL2), поэтому установка нативная: скрипт `deploy/install.ps1`
+ставит PostgreSQL 16, регистрирует брокер службой Windows и публикует его через
+Caddy с сертификатом Let's Encrypt. Без своего домена подойдёт имя
+`<ip-через-дефисы>.sslip.io` — скрипт предложит его сам.
+
+```powershell
+# Одна строка в PowerShell от имени администратора; git не нужен
+[Net.ServicePointManager]::SecurityProtocol='Tls12'; iwr https://github.com/artemavrin/broker/releases/latest/download/install.ps1 -OutFile $env:TEMP\broker-install.ps1 -UseBasicParsing; powershell -ExecutionPolicy Bypass -File $env:TEMP\broker-install.ps1
+```
+
+Параметры дописываются в конец строки, например `-Domain 203-0-113-5.sslip.io`
+или `-Version v1.1.0`.
+
+Повторный запуск безопасен и им же обновляется версия (`-Version vX.Y.Z`).
+Брокер умеет работать службой сам, без обёрток: при запуске из диспетчера
+служб он читает переменные из `--env-file` и пишет журнал в `--log-file`.
+Настройки и секреты — `C:\ProgramData\broker\broker.env` (доступ только у
+администраторов и учётной записи службы), журнал — `C:\ProgramData\broker\logs`.
+
 ## Быстрый старт
 
 ### Через docker-compose
