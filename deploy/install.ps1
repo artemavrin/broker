@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
   Установка брокера на Windows Server 2019+ без Docker: PostgreSQL 16,
   брокер как служба Windows, Caddy с сертификатом Let's Encrypt, файрвол.
@@ -10,12 +10,18 @@
   и никогда не перегенерирует, иначе обнулились бы все выданные токены.
 
 .EXAMPLE
-  # Одна строка в PowerShell от имени администратора:
-  [Net.ServicePointManager]::SecurityProtocol='Tls12'; iwr https://github.com/artemavrin/broker/releases/latest/download/install.ps1 -OutFile $env:TEMP\broker-install.ps1 -UseBasicParsing; powershell -ExecutionPolicy Bypass -File $env:TEMP\broker-install.ps1
+  # PowerShell от имени администратора, одной строкой:
+  irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1 | iex
 
 .EXAMPLE
-  # Без вопросов: домен задан, версия зафиксирована.
-  powershell -ExecutionPolicy Bypass -File .\install.ps1 -Domain 203-0-113-5.sslip.io -Version v1.1.0
+  # С параметрами — без вопросов:
+  iex "& {$(irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1)} -Domain 203-0-113-5.sslip.io"
+
+.NOTES
+  Файл хранится в UTF-8 без BOM: BOM ломает запуск через iex (param перестаёт
+  быть первой инструкцией). Кодировку при irm задаёт HTTP-заголовок. Если
+  запускать сохранённый файл через -File в PowerShell 5.1, сохраните его
+  в UTF-8 с BOM, иначе кириллица прочитается как ANSI.
 #>
 [CmdletBinding()]
 param(

@@ -75,14 +75,8 @@ jobs:
             rm "dist/$bin"
           done
 
-      # Установщик для Windows кладётся в релиз, чтобы ставить одной строкой
-      # по постоянному адресу releases/latest/download/install.ps1 — и чтобы
-      # скрипт всегда соответствовал бинарю той же версии.
-      - name: Установщик для Windows
-        run: cp deploy/install.ps1 dist/
-
       - name: Контрольные суммы
-        run: cd dist && sha256sum *.tar.gz *.zip install.ps1 > checksums.txt
+        run: cd dist && sha256sum *.tar.gz *.zip > checksums.txt
 
       # gh предустановлен на раннере, поэтому сторонний экшен не нужен. Тег
       # создаётся здесь же, на текущем коммите.
