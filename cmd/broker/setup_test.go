@@ -117,3 +117,34 @@ func TestRenderEnvIsStable(t *testing.T) {
 		t.Errorf("переменные не отсортированы: %q", body)
 	}
 }
+
+func TestApplyEnvFileKeepsEnvironment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "broker.env")
+	content := "BROKER_TEST_FROM_FILE=file\nBROKER_TEST_PRESET=file\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BROKER_TEST_FROM_FILE", "")
+	os.Unsetenv("BROKER_TEST_FROM_FILE")
+	t.Setenv("BROKER_TEST_PRESET", "env")
+
+	if err := applyEnvFile(path); err != nil {
+		t.Fatalf("applyEnvFile: %v", err)
+	}
+	if got := os.Getenv("BROKER_TEST_FROM_FILE"); got != "file" {
+		t.Errorf("BROKER_TEST_FROM_FILE = %q, ожидалось значение из файла", got)
+	}
+	// Окружение важнее файла — так же ведёт себя EnvironmentFile в systemd
+	// относительно Environment=, и так переопределение не требует правки файла.
+	if got := os.Getenv("BROKER_TEST_PRESET"); got != "env" {
+		t.Errorf("BROKER_TEST_PRESET = %q, окружение не должно перезаписываться", got)
+	}
+}
+
+func TestApplyEnvFileMissingIsError(t *testing.T) {
+	// Служба без файла переменных стартовала бы без секретов и упала бы с
+	// невнятной ошибкой конфигурации, поэтому отсутствие файла — ошибка.
+	if err := applyEnvFile(filepath.Join(t.TempDir(), "нет-такого")); err == nil {
+		t.Fatal("ожидалась ошибка для отсутствующего файла")
+	}
+}
