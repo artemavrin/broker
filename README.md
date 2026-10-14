@@ -38,9 +38,9 @@ receivers ─┘                       └─ listener (LISTEN new_message) ─�
 
 Артефакт релиза — **один статический файл**: `CGO_ENABLED=0` даёт бинарь без
 зависимостей, миграции вшиты через `//go:embed`. Ни Go, ни Docker, ни libc
-нужной версии на целевой машине не требуются. Сборка под `linux/amd64` и
-`linux/arm64` идёт в GitHub Actions, архивы и контрольные суммы прикладываются
-к релизу.
+нужной версии на целевой машине не требуются. Сборка под Linux и macOS
+(amd64, arm64) и Windows (amd64) идёт в GitHub Actions, архивы и контрольные
+суммы прикладываются к релизу.
 
 ```bash
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o broker ./cmd/broker
@@ -57,6 +57,96 @@ CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o broker ./cmd/broker
 версии останавливается, чтобы не перезаписать опубликованный релиз.
 
 ## Установка
+
+Ставится одной командой: скрипт сам поставит PostgreSQL 16, брокер и Caddy,
+создаст базу, сгенерирует секреты и выпустит сертификат Let's Encrypt. Свой
+домен не нужен — сертификат выпускается прямо на внешний IP. Чтобы
+сертификат выпустился, снаружи должны быть открыты порты **443 и 80** (на
+роутере — проброс на машину с брокером). Без HTTPS можно поставить с
+`--address -` (Linux и macOS).
+
+### Linux и macOS
+
+Скрипт `deploy/install.sh` делает то же, что ручная установка ниже, и добавляет
+HTTPS. Если на машине работает Docker, он спросит, как ставить:
+
+- **docker** — PostgreSQL, брокер и Caddy в docker compose (каталог
+  `/opt/broker` на Linux, `~/.broker-docker` на macOS);
+- **native** — PostgreSQL 16 из пакетов (apt и dnf — из репозитория PGDG,
+  на macOS — Homebrew), брокер и Caddy — службы systemd или launchd.
+
+Без Docker установка нативная.
+
+```bash
+# Linux (Debian, Ubuntu, RHEL и производные, Fedora)
+curl -fsSL https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.sh | sudo bash
+
+# macOS — без sudo: Homebrew от root не работает
+curl -fsSL https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.sh | bash
+
+# С параметрами — без вопросов (--help — все параметры)
+curl -fsSL https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.sh | sudo bash -s -- --mode docker --address 203.0.113.5
+```
+
+Повторный запуск безопасен, продолжает в том же режиме и им же обновляется
+версия (`--version vX.Y.Z`). При нативной установке на Linux настройки и
+секреты лежат в `/etc/broker/broker.env`, журнал — `journalctl -u broker`.
+На macOS службы — агенты пользователя: работают, пока он вошёл в систему.
+
+### Windows Server
+
+На Windows Server 2019 Docker с Linux-контейнерами недоступен (нет ни Docker
+Desktop, ни WSL2), поэтому установка нативная: скрипт `deploy/install.ps1`
+ставит PostgreSQL 16, регистрирует брокер службой Windows и публикует его через
+Caddy с сертификатом Let's Encrypt. Свой домен не нужен: сертификат
+выпускается прямо на внешний IP (профиль `shortlived`, срок около 6 дней,
+Caddy продлевает сам). Снаружи должны быть открыты порты 443 и 80.
+
+```powershell
+# PowerShell от имени администратора; git не нужен
+irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1 | iex
+```
+
+С параметрами (например, чтобы не спрашивал адрес; подойдёт IP или домен):
+
+```powershell
+iex "& {$(irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1)} -Address 203.0.113.5"
+```
+
+Если `irm` ругается «Не удалось создать защищённый канал SSL/TLS» — в старом
+PowerShell выключен TLS 1.2; включить его в текущем окне и повторить:
+`[Net.ServicePointManager]::SecurityProtocol='Tls12'`.
+
+Повторный запуск безопасен и им же обновляется версия (`-Version vX.Y.Z`).
+Брокер умеет работать службой сам, без обёрток: при запуске из диспетчера
+служб он читает переменные из `--env-file` и пишет журнал в `--log-file`.
+Настройки и секреты — `C:\ProgramData\broker\broker.env` (доступ только у
+администраторов и учётной записи службы), журнал — `C:\ProgramData\broker\logs`.
+
+### После установки
+
+В конце скрипт печатает адрес брокера и **секрет первого инициатора — один
+раз**, его нужно сохранить сразу. Если потерян — завести нового инициатора в
+дашборде.
+
+Дашборд `/admin/` в интернет не публикуется (снаружи — 403), он открыт только
+на самой машине: `http://127.0.0.1:8080/admin/`, вход по `ADMIN_TOKEN` из
+файла настроек. С другого компьютера — через SSH-туннель
+(`ssh -L 8080:127.0.0.1:8080 <сервер>`, затем тот же адрес) или RDP на Windows.
+
+| | Настройки и `ADMIN_TOKEN` | Журнал |
+|---|---|---|
+| Linux, native | `/etc/broker/broker.env` | `journalctl -u broker -f` |
+| Linux, docker | `/opt/broker/config/broker.env` | `cd /opt/broker && docker compose logs -f broker` |
+| macOS, native | `~/.broker/broker.env` | `tail -f ~/.broker/logs/broker.log` |
+| macOS, docker | `~/.broker-docker/config/broker.env` | `cd ~/.broker-docker && docker compose logs -f broker` |
+| Windows | `C:\ProgramData\broker\broker.env` | `C:\ProgramData\broker\logs` |
+
+Проверка: `curl https://<адрес>/healthz` → `ok`. Обновление — тот же скрипт
+ещё раз: подтянет последний релиз (или `--version` / `-Version`), настройки и
+данные сохранятся.
+
+### Вручную (Linux, без скрипта)
 
 На целевой машине нужны только Linux (x86-64 или arm64) и доступный
 PostgreSQL 16+. Всё остальное — в бинаре.
@@ -157,65 +247,6 @@ location /admin/ {          # дашборд не выпускаем в инте
 Обновление — замена файла и перезапуск: `broker check` на новой версии,
 `systemctl stop broker`, распаковка архива поверх, `systemctl start broker`.
 Миграции новая версия применяет сама при запуске.
-
-### Linux и macOS
-
-Скрипт `deploy/install.sh` делает то же, что ручные шаги выше, и добавляет
-HTTPS. Если на машине работает Docker, он спросит, как ставить:
-
-- **docker** — PostgreSQL, брокер и Caddy в docker compose (каталог
-  `/opt/broker` на Linux, `~/.broker-docker` на macOS);
-- **native** — PostgreSQL 16 из пакетов (apt и dnf — из репозитория PGDG,
-  на macOS — Homebrew), брокер и Caddy — службы systemd или launchd.
-
-Без Docker установка нативная. Сертификат Let's Encrypt, как и на Windows,
-выпускается прямо на внешний IP; снаружи должны быть открыты порты 443 и 80.
-
-```bash
-# Linux (Debian, Ubuntu, RHEL и производные, Fedora)
-curl -fsSL https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.sh | sudo bash
-
-# macOS — без sudo: Homebrew от root не работает
-curl -fsSL https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.sh | bash
-
-# С параметрами — без вопросов (--help — все параметры)
-curl -fsSL https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.sh | sudo bash -s -- --mode docker --address 203.0.113.5
-```
-
-Повторный запуск безопасен, продолжает в том же режиме и им же обновляется
-версия (`--version vX.Y.Z`). При нативной установке на Linux настройки и
-секреты лежат в `/etc/broker/broker.env`, журнал — `journalctl -u broker`.
-На macOS службы — агенты пользователя: работают, пока он вошёл в систему.
-
-### Windows Server
-
-На Windows Server 2019 Docker с Linux-контейнерами недоступен (нет ни Docker
-Desktop, ни WSL2), поэтому установка нативная: скрипт `deploy/install.ps1`
-ставит PostgreSQL 16, регистрирует брокер службой Windows и публикует его через
-Caddy с сертификатом Let's Encrypt. Свой домен не нужен: сертификат
-выпускается прямо на внешний IP (профиль `shortlived`, срок около 6 дней,
-Caddy продлевает сам). Снаружи должны быть открыты порты 443 и 80.
-
-```powershell
-# PowerShell от имени администратора; git не нужен
-irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1 | iex
-```
-
-С параметрами (например, чтобы не спрашивал адрес; подойдёт IP или домен):
-
-```powershell
-iex "& {$(irm https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.ps1)} -Address 203.0.113.5"
-```
-
-Если `irm` ругается «Не удалось создать защищённый канал SSL/TLS» — в старом
-PowerShell выключен TLS 1.2; включить его в текущем окне и повторить:
-`[Net.ServicePointManager]::SecurityProtocol='Tls12'`.
-
-Повторный запуск безопасен и им же обновляется версия (`-Version vX.Y.Z`).
-Брокер умеет работать службой сам, без обёрток: при запуске из диспетчера
-служб он читает переменные из `--env-file` и пишет журнал в `--log-file`.
-Настройки и секреты — `C:\ProgramData\broker\broker.env` (доступ только у
-администраторов и учётной записи службы), журнал — `C:\ProgramData\broker\logs`.
 
 ## Быстрый старт
 
