@@ -158,6 +158,35 @@ location /admin/ {          # дашборд не выпускаем в инте
 `systemctl stop broker`, распаковка архива поверх, `systemctl start broker`.
 Миграции новая версия применяет сама при запуске.
 
+### Linux и macOS
+
+Скрипт `deploy/install.sh` делает то же, что ручные шаги выше, и добавляет
+HTTPS. Если на машине работает Docker, он спросит, как ставить:
+
+- **docker** — PostgreSQL, брокер и Caddy в docker compose (каталог
+  `/opt/broker` на Linux, `~/.broker-docker` на macOS);
+- **native** — PostgreSQL 16 из пакетов (apt и dnf — из репозитория PGDG,
+  на macOS — Homebrew), брокер и Caddy — службы systemd или launchd.
+
+Без Docker установка нативная. Сертификат Let's Encrypt, как и на Windows,
+выпускается прямо на внешний IP; снаружи должны быть открыты порты 443 и 80.
+
+```bash
+# Linux (Debian, Ubuntu, RHEL и производные, Fedora)
+curl -fsSL https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.sh | sudo bash
+
+# macOS — без sudo: Homebrew от root не работает
+curl -fsSL https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.sh | bash
+
+# С параметрами — без вопросов (--help — все параметры)
+curl -fsSL https://raw.githubusercontent.com/artemavrin/broker/main/deploy/install.sh | sudo bash -s -- --mode docker --address 203.0.113.5
+```
+
+Повторный запуск безопасен, продолжает в том же режиме и им же обновляется
+версия (`--version vX.Y.Z`). При нативной установке на Linux настройки и
+секреты лежат в `/etc/broker/broker.env`, журнал — `journalctl -u broker`.
+На macOS службы — агенты пользователя: работают, пока он вошёл в систему.
+
 ### Windows Server
 
 На Windows Server 2019 Docker с Linux-контейнерами недоступен (нет ни Docker
